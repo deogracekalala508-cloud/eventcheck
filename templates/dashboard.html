@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ event['name'] }}{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <div>
+            <h1>📊 {{ event['name'] }}</h1>
+            <p class="subtitle">Dashboard de contrôle en temps réel</p>
+        </div>
+        <div class="header-actions">
+            <a href="{{ url_for('main.checkin', event_id=event['id']) }}" class="btn btn-success">
+                🚪 Check-in
+            </a>
+            <a href="{{ url_for('main.event_detail', event_id=event['id']) }}" class="btn btn-secondary">
+                ⚙️ Contrôle
+            </a>
+        </div>
+    </div>
+    
+    <div class="stats-overview">
+        <div class="stat-card gradient-purple">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+                <h3>Total Invités</h3>
+                <p class="stat-number">{{ stats.total }}</p>
+            </div>
+        </div>
+        
+        <div class="stat-card gradient-green">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+                <h3>Présents</h3>
+                <p class="stat-number">{{ stats.present }}</p>
+            </div>
+        </div>
+        
+        <div class="stat-card gradient-red">
+            <div class="stat-icon">⭕</div>
+            <div class="stat-content">
+                <h3>Absents</h3>
+                <p class="stat-number">{{ stats.absent }}</p>
+            </div>
+        </div>
+        
+        <div class="stat-card gradient-blue">
+            <div class="stat-icon">📈</div>
+            <div class="stat-content">
+                <h3>Progression</h3>
+                <p class="stat-number">{{ stats.percentage }}%</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ stats.percentage }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="dashboard-grid">
+        <div class="dashboard-section">
+            <h2>🪑 État des Tables</h2>
+            <div class="tables-grid">
+                {% for table in stats.tables %}
+                <div class="table-card {% if table.present == table.total and table.total > 0 %}table-full{% elif table.present == 0 %}table-empty{% else %}table-partial{% endif %}">
+                    <div class="table-header">
+                        <h3>Table {{ table.number }}</h3>
+                        <span class="table-status">
+                            {% if table.present == table.total and table.total > 0 %}
+                                ✅
+                            {% elif table.present == 0 %}
+                                ⭕
+                            {% else %}
+                                🔄
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="table-count">
+                        <span class="count-present">{{ table.present }}</span>
+                        <span class="count-separator">/</span>
+                        <span class="count-total">{{ table.total }}</span>
+                    </div>
+                    <div class="mini-progress">
+                        <div class="mini-fill" style="width: {{ (table.present / table.total * 100) if table.total > 0 else 0 }}%"></div>
+                    </div>
+                    <p class="table-remaining">
+                        {% set remaining = table.total - table.present %}
+                        {% if remaining > 0 %}
+                            {{ remaining }} place(s) restante(s)
+                        {% else %}
+                            Complète
+                        {% endif %}
+                    </p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div class="dashboard-sidebar">
+            <div class="dashboard-section">
+                <h2>🕐 Derniers Check-ins</h2>
+                <div class="checkins-list">
+                    {% if last_checkins %}
+                        {% for guest in last_checkins %}
+                        <div class="checkin-item">
+                            <div class="checkin-info">
+                                <span class="guest-name">{{ guest['last_name'] }} {{ guest['first_name'] }}</span>
+                                <span class="guest-table">Table {{ guest['table_number'] }}</span>
+                            </div>
+                            <span class="checkin-time">
+                                {% if guest['checkin_time'] %}
+                                    {{ guest['checkin_time'][11:19] }}
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="no-data">Aucun check-in pour le moment</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="dashboard-section">
+                <h2>📋 Résumé</h2>
+                <div class="summary-stats">
+                    <div class="summary-item">
+                        <span>Tables complètes :</span>
+                        <strong>
+                            {% set full_count = 0 %}
+                            {% for table in stats.tables %}
+                                {% if table.present == table.total and table.total > 0 %}
+                                    {% set full_count = full_count + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                            {{ full_count }}
+                        </strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Tables vides :</span>
+                        <strong>
+                            {% set empty_count = 0 %}
+                            {% for table in stats.tables %}
+                                {% if table.present == 0 %}
+                                    {% set empty_count = empty_count + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                            {{ empty_count }}
+                        </strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Taux de remplissage :</span>
+                        <strong>{{ stats.percentage }}%</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const eventId = {{ event['id'] }};
+const socket = io();
+
+socket.emit('join_event', { event_id: eventId });
+
+socket.on('guest_checked_in', function(data) {
+    location.reload();
+});
+
+socket.on('guest_added', function(data) {
+    location.reload();
+});
+
+setInterval(function() {
+    location.reload();
+}, 30000);
+</script>
+{% endblock %}

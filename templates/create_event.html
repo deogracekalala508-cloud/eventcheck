@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Créer un Événement{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📝 Créer un Nouvel Événement</h1>
+    
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="POST" enctype="multipart/form-data" class="event-form">
+        <div class="form-group">
+            <label for="name">Nom de l'événement *</label>
+            <input type="text" id="name" name="name" required 
+                   placeholder="Ex: Mariage Dupont">
+        </div>
+        
+        <div class="form-group">
+            <label for="event_date">Date *</label>
+            <input type="date" id="event_date" name="event_date" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="guest_list">
+                📄 Liste des invités (optionnel)
+                <span class="help-text">
+                    Formats acceptés: Excel (.xlsx, .xls), CSV (.csv), Photos (.jpg, .png)
+                </span>
+            </label>
+            <input type="file" id="guest_list" name="guest_list" 
+                   accept=".csv,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff">
+            
+            <div class="format-info">
+                <h4>📸 Pour les photos de listes papier :</h4>
+                <ul>
+                    <li>Photo lisible et bien éclairée</li>
+                    <li>Texte horizontal et net</li>
+                    <li>Format idéal : NOM Prénom Table X</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="form-info">
+            <h3>💡 Vous pourrez aussi :</h3>
+            <ul>
+                <li>Ajouter des invités manuellement</li>
+                <li>Importer la liste plus tard</li>
+                <li>Ajouter des invités pendant l'événement</li>
+            </ul>
+        </div>
+        
+        <button type="submit" class="btn btn-primary btn-large">
+            ✅ Créer l'événement
+        </button>
+    </form>
+</div>
+{% endblock %}

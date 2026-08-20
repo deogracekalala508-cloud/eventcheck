@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Mes Événements - EventCheck{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header-actions">
+        <h1>🎉 Mes Événements</h1>
+        <a href="{{ url_for('main.create_event') }}" class="btn btn-primary">
+            ➕ Nouvel Événement
+        </a>
+    </div>
+    
+    {% if events %}
+    <div class="events-grid">
+        {% for event in events %}
+        <div class="event-card">
+            <h2>{{ event['name'] }}</h2>
+            <p class="event-date">📅 {{ event['event_date'] }}</p>
+            <p class="event-status">
+                <span class="badge badge-active">{{ event['status'] }}</span>
+            </p>
+            <div class="event-actions">
+                <a href="{{ url_for('main.checkin', event_id=event['id']) }}" 
+                   class="btn btn-success">
+                    ✅ Check-in
+                </a>
+                <a href="{{ url_for('main.dashboard', event_id=event['id']) }}" 
+                   class="btn btn-info">
+                    📊 Dashboard
+                </a>
+            </div>
+            <div class="event-actions-secondary">
+                <a href="{{ url_for('main.event_detail', event_id=event['id']) }}" 
+                   class="btn btn-secondary btn-sm">
+                    ⚙️ Gérer
+                </a>
+                <button onclick="confirmDelete({{ event['id'] }}, '{{ event['name'] }}')" 
+                        class="btn btn-danger btn-sm">
+                    🗑️ Supprimer
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>🎭 Aucun événement pour le moment</p>
+        <a href="{{ url_for('main.create_event') }}" class="btn btn-primary">
+            Créer mon premier événement
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal de confirmation -->
+<div id="deleteModal" class="modal hidden">
+    <div class="modal-content">
+        <h3>⚠️ Supprimer l'événement</h3>
+        <p>Voulez-vous vraiment supprimer <strong id="deleteEventName"></strong> ?</p>
+        <p class="warning-text">Cette action est irréversible. Tous les invités seront supprimés.</p>
+        <div class="modal-actions">
+            <button onclick="closeModal()" class="btn btn-secondary">Annuler</button>
+            <form id="deleteForm" method="POST" style="display: inline;">
+                <button type="submit" class="btn btn-danger">🗑️ Supprimer définitivement</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmDelete(eventId, eventName) {
+    document.getElementById('deleteEventName').textContent = eventName;
+    document.getElementById('deleteForm').action = '/event/' + eventId + '/delete';
+    document.getElementById('deleteModal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('deleteModal').classList.add('hidden');
+}
+
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
+</script>
+{% endblock %}

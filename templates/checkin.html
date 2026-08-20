@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Check-in - {{ event['name'] }}{% endblock %}
+
+{% block content %}
+<div class="checkin-container">
+    <div class="checkin-header">
+        <h1>{{ event['name'] }}</h1>
+        <div class="quick-stats">
+            <span class="stat-badge present">✅ {{ stats.present }}</span>
+            <span class="stat-badge absent">⭕ {{ stats.absent }}</span>
+            <span class="stat-badge total">👥 {{ stats.total }}</span>
+        </div>
+    </div>
+    
+    <div class="checkin-main">
+        <div class="search-section">
+            <input type="text" 
+                   id="searchInput" 
+                   placeholder="🔍 Tapez le nom de l'invité..."
+                   autocomplete="off"
+                   autofocus>
+            <div id="searchResults" class="search-results"></div>
+        </div>
+        
+        <div class="last-checkin" id="lastCheckin">
+            <span id="lastCheckinText">En attente du premier check-in...</span>
+        </div>
+        
+        <div class="add-guest-section">
+            <button id="showAddGuestForm" class="btn btn-secondary">
+                ➕ Ajouter un invité
+            </button>
+            <div id="addGuestForm" class="add-guest-form hidden">
+                <input type="text" id="newFirstName" placeholder="Prénom" required>
+                <input type="text" id="newLastName" placeholder="Nom" required>
+                <input type="text" id="newTable" placeholder="N° Table" required>
+                <button id="addGuestBtn" class="btn btn-success">Ajouter</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const eventId = {{ event['id'] }};
+const socket = io();
+
+// Rejoindre la salle de l'événement
+socket.emit('join_event', { event_id: eventId });
+
+// Recherche en temps réel
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    clearTimeout(searchTimeout);
+    const query = e.target.value;
+    
+    if (query.length < 2) {
+        document.getElementById('searchResults').innerHTML = '';
+        return;
+    }
+    
+    searchTimeout = setTimeout(() => {
+        fetch(`/api/event/${eventId}/search?q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(guests => {
+                displaySearchResults(guests);
+            });
+    }, 200); // Délai de 200ms pour ne pas surcharger
+});
+
+// Afficher les résultats de recherche
+function displaySearchResults(guests) {
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (guests.length === 0) {
+        resultsDiv.innerHTML = '<div class="no-results">Aucun invité trouvé</div>';
+        return;
+    }
+    
+    resultsDiv.innerHTML = guests.map(guest => `
+        <div class="guest-item ${guest.status === 'present' ? 'checked-in' : ''}" 
+             onclick="checkinGuest(${guest.id}, '${guest.first_name} ${guest.last_name}')">
+            <div class="guest-info">
+                <span class="guest-name">${guest.last_name} ${guest.first_name}</span>
+                <span class="guest-table">Table ${guest.table_number}</span>
+            </div>
+            <div class="guest-status">
+                ${guest.status === 'present' ? '✅' : '⭕'}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Check-in d'un invité
+function checkinGuest(guestId, guestName) {
+    fetch(`/api/event/${eventId}/checkin`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ guest_id: guestId })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Animation et feedback
+            document.getElementById('lastCheckinText').innerHTML = 
+                `✅ ${data.guest.first_name} ${data.guest.last_name} → Table ${data.guest.table_number}`;
+            
+            // Effet visuel
+            document.getElementById('lastCheckin').classList.add('pulse');
+            setTimeout(() => {
+                document.getElementById('lastCheckin').classList.remove('pulse');
+            }, 1000);
+            
+            // Vider la recherche
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResults').innerHTML = '';
+            
+            // Focus sur la recherche
+            document.getElementById('searchInput').focus();
+        }
+    });
+}
+
+// Socket.IO - Mise à jour en temps réel
+socket.on('guest_checked_in', function(data) {
+    // Mettre à jour les stats
+    updateStats(data.stats);
+});
+
+function updateStats(stats) {
+    document.querySelector('.stat-badge.present').textContent = `✅ ${stats.present}`;
+    document.querySelector('.stat-badge.absent').textContent = `⭕ ${stats.absent}`;
+}
+
+// Ajout d'un invité à la volée
+document.getElementById('showAddGuestForm').addEventListener('click', function() {
+    document.getElementById('addGuestForm').classList.toggle('hidden');
+});
+
+document.getElementById('addGuestBtn').addEventListener('click', function() {
+    const firstName = document.getElementById('newFirstName').value;
+    const lastName = document.getElementById('newLastName').value;
+    const table = document.getElementById('newTable').value;
+    
+    if (!firstName || !lastName || !table) {
+        alert('Tous les champs sont obligatoires');
+        return;
+    }
+    
+    fetch(`/api/event/${eventId}/add-guest`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            first_name: firstName,
+            last_name: lastName,
+            table_number: table
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Invité ajouté avec succès !');
+            document.getElementById('newFirstName').value = '';
+            document.getElementById('newLastName').value = '';
+            document.getElementById('newTable').value = '';
+            document.getElementById('addGuestForm').classList.add('hidden');
+        }
+    });
+});
+
+// Raccourci clavier: Échap pour vider la recherche
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('searchResults').innerHTML = '';
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}{{ event['name'] }} - Contrôle{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="event-header">
+        <h1>🎉 {{ event['name'] }}</h1>
+        <p class="event-date">📅 {{ event['event_date'] }}</p>
+    </div>
+    
+    <!-- Statistiques rapides -->
+    <div class="quick-stats-bar">
+        <div class="mini-stat">
+            <span class="mini-number">{{ stats.total }}</span>
+            <span class="mini-label">Invités</span>
+        </div>
+        <div class="mini-stat success">
+            <span class="mini-number">{{ stats.present }}</span>
+            <span class="mini-label">Présents</span>
+        </div>
+        <div class="mini-stat warning">
+            <span class="mini-number">{{ stats.absent }}</span>
+            <span class="mini-label">Absents</span>
+        </div>
+        <div class="mini-stat info">
+            <span class="mini-number">{{ stats.percentage }}%</span>
+            <span class="mini-label">Remplissage</span>
+        </div>
+    </div>
+    
+    <!-- Les deux interfaces -->
+    <div class="dual-interface">
+        <!-- Interface Personnel à la porte -->
+        <div class="interface-card door-interface">
+            <h2>🚪 Personnel à la Porte</h2>
+            <p class="interface-desc">Interface de check-in rapide pour l'hôte/hôtesse</p>
+            <div class="interface-preview">
+                <div class="preview-screen">
+                    <div class="fake-search">🔍 Tapez le nom de l'invité...</div>
+                    <div class="fake-results">
+                        <div class="fake-guest">DUPONT Marie - Table 8 ✅</div>
+                        <div class="fake-guest">MARTIN Jean - Table 12 ⭕</div>
+                    </div>
+                </div>
+            </div>
+            <a href="{{ url_for('main.checkin', event_id=event['id']) }}" 
+               class="btn btn-primary btn-large">
+                ✅ Accéder au Check-in
+            </a>
+            <div class="interface-features">
+                <span>✓ Recherche rapide</span>
+                <span>✓ Check-in en 2 secondes</span>
+                <span>✓ Annonce vocale</span>
+                <span>✓ Ajout invités à la volée</span>
+            </div>
+        </div>
+        
+        <!-- Interface Dashboard Contrôle -->
+        <div class="interface-card control-interface">
+            <h2>📊 Dashboard de Contrôle</h2>
+            <p class="interface-desc">Vue d'ensemble pour les organisateurs</p>
+            <div class="interface-preview">
+                <div class="preview-stats">
+                    <div class="preview-chart">
+                        <div class="chart-bar" style="height: {{ stats.percentage }}%"></div>
+                    </div>
+                    <div class="preview-tables">
+                        {% for table in stats.tables[:3] %}
+                        <div class="mini-table">
+                            Table {{ table.number }}: {{ table.present }}/{{ table.total }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <a href="{{ url_for('main.dashboard', event_id=event['id']) }}" 
+               class="btn btn-info btn-large">
+                📊 Accéder au Dashboard
+            </a>
+            <div class="interface-features">
+                <span>✓ Stats en temps réel</span>
+                <span>✓ Suivi par table</span>
+                <span>✓ Progression globale</span>
+                <span>✓ Derniers check-ins</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Gestion des invités -->
+    <div class="guest-management">
+        <h2>👥 Gestion des Invités</h2>
+        <div class="management-actions">
+            <a href="{{ url_for('main.checkin', event_id=event['id']) }}#add-guest" 
+               class="btn btn-secondary">
+                ➕ Ajouter des invités manuellement
+            </a>
+            <a href="{{ url_for('main.create_event') }}" 
+               class="btn btn-secondary">
+                📄 Importer une nouvelle liste
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
