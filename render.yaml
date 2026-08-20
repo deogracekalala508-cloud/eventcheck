@@ -1,10 +1,13 @@
 services:
   - type: web
     name: eventcheck
-    env: python
+    runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: SECRET_KEY
         value: ma_cle_secrete_2024
       - key: ADMIN_PASSWORD
