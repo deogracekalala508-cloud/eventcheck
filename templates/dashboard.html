@@ -124,27 +124,19 @@
                 <div class="summary-stats">
                     <div class="summary-item">
                         <span>Tables complètes :</span>
-                        <strong>
-                            {% set full_count = 0 %}
-                            {% for table in stats.tables %}
-                                {% if table.present == table.total and table.total > 0 %}
-                                    {% set full_count = full_count + 1 %}
-                                {% endif %}
-                            {% endfor %}
-                            {{ full_count }}
-                        </strong>
+                        <strong style="color: #28a745;">{{ tables_completes }}</strong>
                     </div>
                     <div class="summary-item">
                         <span>Tables vides :</span>
-                        <strong>
-                            {% set empty_count = 0 %}
-                            {% for table in stats.tables %}
-                                {% if table.present == 0 %}
-                                    {% set empty_count = empty_count + 1 %}
-                                {% endif %}
-                            {% endfor %}
-                            {{ empty_count }}
-                        </strong>
+                        <strong style="color: #dc3545;">{{ tables_vides }}</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Tables partielles :</span>
+                        <strong style="color: #ffc107;">{{ tables_partielles }}</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Total tables :</span>
+                        <strong>{{ tables_completes + tables_vides + tables_partielles }}</strong>
                     </div>
                     <div class="summary-item">
                         <span>Taux de remplissage :</span>

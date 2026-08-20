@@ -67,7 +67,26 @@ def event_detail(event_id):
         return redirect(url_for('main.index'))
     
     stats = db.get_stats(event_id)
-    return render_template('event_detail.html', event=event, stats=stats)
+    
+    # Calculer les tables complètes, vides et partielles
+    tables_completes = 0
+    tables_vides = 0
+    tables_partielles = 0
+    
+    for table in stats['tables']:
+        if table['total'] > 0 and table['present'] == table['total']:
+            tables_completes += 1
+        elif table['present'] == 0:
+            tables_vides += 1
+        else:
+            tables_partielles += 1
+    
+    return render_template('event_detail.html', 
+                         event=event, 
+                         stats=stats,
+                         tables_completes=tables_completes,
+                         tables_vides=tables_vides,
+                         tables_partielles=tables_partielles)
 
 @main.route('/event/<int:event_id>/checkin')
 def checkin(event_id):
@@ -92,11 +111,27 @@ def dashboard(event_id):
     last_checkins = db.get_last_checkins(event_id, limit=10)
     guests = db.get_guests(event_id)
     
+    # Calculer les tables complètes, vides et partielles
+    tables_completes = 0
+    tables_vides = 0
+    tables_partielles = 0
+    
+    for table in stats['tables']:
+        if table['total'] > 0 and table['present'] == table['total']:
+            tables_completes += 1
+        elif table['present'] == 0:
+            tables_vides += 1
+        else:
+            tables_partielles += 1
+    
     return render_template('dashboard.html', 
                          event=event, 
                          stats=stats, 
                          last_checkins=last_checkins,
-                         guests=guests)
+                         guests=guests,
+                         tables_completes=tables_completes,
+                         tables_vides=tables_vides,
+                         tables_partielles=tables_partielles)
 
 @main.route('/event/<int:event_id>/delete', methods=['POST'])
 def delete_event(event_id):
@@ -155,9 +190,26 @@ def api_stats(event_id):
     """API statistiques"""
     stats = db.get_stats(event_id)
     last_checkins = db.get_last_checkins(event_id)
+    
+    # Calculer les tables
+    tables_completes = 0
+    tables_vides = 0
+    tables_partielles = 0
+    
+    for table in stats['tables']:
+        if table['total'] > 0 and table['present'] == table['total']:
+            tables_completes += 1
+        elif table['present'] == 0:
+            tables_vides += 1
+        else:
+            tables_partielles += 1
+    
     return jsonify({
         'stats': stats,
-        'last_checkins': [dict(g) for g in last_checkins]
+        'last_checkins': [dict(g) for g in last_checkins],
+        'tables_completes': tables_completes,
+        'tables_vides': tables_vides,
+        'tables_partielles': tables_partielles
     })
 
 @main.route('/api/event/<int:event_id>/add-guest', methods=['POST'])
