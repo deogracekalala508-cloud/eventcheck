@@ -7,3 +7,6 @@ pydantic==2.5.2
 python-dotenv==1.0.0
 gunicorn==21.2.0
 eventlet==0.33.3
+psycopg2-binary==2.9.9
+Pillow==10.0.0
+pytesseract==0.3.10

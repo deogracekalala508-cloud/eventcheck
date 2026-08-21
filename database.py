@@ -1,19 +1,15 @@
 import os
 import sqlite3
 from datetime import datetime
-import json
 
 class Database:
     def __init__(self):
-        """Connexion à PostgreSQL sur Render ou SQLite en local"""
-        # Détecter si on est sur Render (variable DATABASE_URL présente)
         self.database_url = os.getenv('DATABASE_URL', None)
         
         if self.database_url:
-            # Mode PostgreSQL (Render)
+            self.mode = 'postgresql'
             import psycopg2
             import urllib.parse
-            self.mode = 'postgresql'
             result = urllib.parse.urlparse(self.database_url)
             self.conn_params = {
                 'host': result.hostname,
@@ -23,14 +19,12 @@ class Database:
                 'port': result.port
             }
         else:
-            # Mode SQLite (local)
             self.mode = 'sqlite'
             self.db_path = 'events.db'
         
         self.init_db()
     
     def get_connection(self):
-        """Retourne une connexion selon le mode"""
         if self.mode == 'postgresql':
             import psycopg2
             return psycopg2.connect(**self.conn_params)
@@ -38,11 +32,10 @@ class Database:
             return sqlite3.connect(self.db_path)
     
     def init_db(self):
-        """Initialise les tables"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
         if self.mode == 'postgresql':
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS events (
                     id SERIAL PRIMARY KEY,
@@ -56,7 +49,7 @@ class Database:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS guests (
                     id SERIAL PRIMARY KEY,
-                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    event_id INTEGER NOT NULL,
                     first_name TEXT NOT NULL,
                     last_name TEXT NOT NULL,
                     table_number TEXT NOT NULL,
@@ -69,7 +62,7 @@ class Database:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS service_requests (
                     id SERIAL PRIMARY KEY,
-                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    event_id INTEGER NOT NULL,
                     table_number TEXT NOT NULL,
                     request_type TEXT NOT NULL,
                     details TEXT,
@@ -81,7 +74,7 @@ class Database:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS music_requests (
                     id SERIAL PRIMARY KEY,
-                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    event_id INTEGER NOT NULL,
                     table_number TEXT,
                     song_name TEXT,
                     artist TEXT,
@@ -94,7 +87,7 @@ class Database:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS posts (
                     id SERIAL PRIMARY KEY,
-                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    event_id INTEGER NOT NULL,
                     table_number TEXT,
                     author_name TEXT DEFAULT 'Invité',
                     content_type TEXT NOT NULL,
@@ -104,15 +97,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
         else:
-            # Mode SQLite (local)
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,8 +117,7 @@ class Database:
                     table_number TEXT NOT NULL,
                     status TEXT DEFAULT 'absent',
                     checkin_time TEXT,
-                    notes TEXT,
-                    FOREIGN KEY (event_id) REFERENCES events (id)
+                    notes TEXT
                 )
             ''')
             
@@ -145,8 +129,7 @@ class Database:
                     request_type TEXT NOT NULL,
                     details TEXT,
                     status TEXT DEFAULT 'pending',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (event_id) REFERENCES events (id)
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
@@ -159,8 +142,7 @@ class Database:
                     artist TEXT,
                     genre TEXT,
                     status TEXT DEFAULT 'pending',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (event_id) REFERENCES events (id)
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
@@ -174,41 +156,36 @@ class Database:
                     text_content TEXT,
                     media_url TEXT,
                     status TEXT DEFAULT 'pending',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (event_id) REFERENCES events (id)
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
-            conn.commit()
-            conn.close()
-    
-    # ============ ÉVÉNEMENTS ============
-    
-    def create_event(self, name, event_date):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        if self.mode == 'postgresql':
-            cursor.execute(
-                "INSERT INTO events (name, event_date) VALUES (%s, %s) RETURNING id",
-                (name, event_date)
-            )
-            event_id = cursor.fetchone()[0]
-        else:
-            cursor.execute(
-                "INSERT INTO events (name, event_date) VALUES (?, ?)",
-                (name, event_date)
-            )
-            event_id = cursor.lastrowid
+        
         conn.commit()
         cursor.close()
         conn.close()
-        return event_id
     
-    def get_event(self, event_id):
+    def _fetch_all(self, query, params=()):
         conn = self.get_connection()
         cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute("SELECT * FROM events WHERE id = %s", (event_id,))
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            result = [dict(zip(columns, row)) for row in rows]
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            result = [dict(row) for row in rows]
+        cursor.close()
+        conn.close()
+        return result
+    
+    def _fetch_one(self, query, params=()):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        if self.mode == 'postgresql':
+            cursor.execute(query, params)
             row = cursor.fetchone()
             if row:
                 columns = [desc[0] for desc in cursor.description]
@@ -217,7 +194,7 @@ class Database:
                 return dict(zip(columns, row))
         else:
             conn.row_factory = sqlite3.Row
-            cursor.execute("SELECT * FROM events WHERE id = ?", (event_id,))
+            cursor.execute(query, params)
             row = cursor.fetchone()
             if row:
                 cursor.close()
@@ -227,41 +204,51 @@ class Database:
         conn.close()
         return None
     
-    def get_all_events(self):
+    def _execute(self, query, params=()):
         conn = self.get_connection()
         cursor = conn.cursor()
-        if self.mode == 'postgresql':
-            cursor.execute("SELECT * FROM events ORDER BY created_at DESC")
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
-        else:
-            conn.row_factory = sqlite3.Row
-            cursor.execute("SELECT * FROM events ORDER BY created_at DESC")
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
-    
-    def delete_event(self, event_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        if self.mode == 'postgresql':
-            cursor.execute("DELETE FROM guests WHERE event_id = %s", (event_id,))
-            cursor.execute("DELETE FROM service_requests WHERE event_id = %s", (event_id,))
-            cursor.execute("DELETE FROM music_requests WHERE event_id = %s", (event_id,))
-            cursor.execute("DELETE FROM posts WHERE event_id = %s", (event_id,))
-            cursor.execute("DELETE FROM events WHERE id = %s", (event_id,))
-        else:
-            cursor.execute("DELETE FROM guests WHERE event_id = ?", (event_id,))
-            cursor.execute("DELETE FROM service_requests WHERE event_id = ?", (event_id,))
-            cursor.execute("DELETE FROM music_requests WHERE event_id = ?", (event_id,))
-            cursor.execute("DELETE FROM posts WHERE event_id = ?", (event_id,))
-            cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+        cursor.execute(query, params)
         conn.commit()
         cursor.close()
         conn.close()
+    
+    # ============ ÉVÉNEMENTS ============
+    
+    def create_event(self, name, event_date):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        if self.mode == 'postgresql':
+            cursor.execute("INSERT INTO events (name, event_date) VALUES (%s, %s) RETURNING id", (name, event_date))
+            event_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("INSERT INTO events (name, event_date) VALUES (?, ?)", (name, event_date))
+            event_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return event_id
+    
+    def get_event(self, event_id):
+        if self.mode == 'postgresql':
+            return self._fetch_one("SELECT * FROM events WHERE id = %s", (event_id,))
+        return self._fetch_one("SELECT * FROM events WHERE id = ?", (event_id,))
+    
+    def get_all_events(self):
+        return self._fetch_all("SELECT * FROM events ORDER BY created_at DESC")
+    
+    def delete_event(self, event_id):
+        if self.mode == 'postgresql':
+            self._execute("DELETE FROM guests WHERE event_id = %s", (event_id,))
+            self._execute("DELETE FROM service_requests WHERE event_id = %s", (event_id,))
+            self._execute("DELETE FROM music_requests WHERE event_id = %s", (event_id,))
+            self._execute("DELETE FROM posts WHERE event_id = %s", (event_id,))
+            self._execute("DELETE FROM events WHERE id = %s", (event_id,))
+        else:
+            self._execute("DELETE FROM guests WHERE event_id = ?", (event_id,))
+            self._execute("DELETE FROM service_requests WHERE event_id = ?", (event_id,))
+            self._execute("DELETE FROM music_requests WHERE event_id = ?", (event_id,))
+            self._execute("DELETE FROM posts WHERE event_id = ?", (event_id,))
+            self._execute("DELETE FROM events WHERE id = ?", (event_id,))
         return True
     
     # ============ INVITÉS ============
@@ -269,14 +256,13 @@ class Database:
     def add_guests_batch(self, event_id, guests_list):
         conn = self.get_connection()
         cursor = conn.cursor()
-        if self.mode == 'postgresql':
-            for guest in guests_list:
+        for guest in guests_list:
+            if self.mode == 'postgresql':
                 cursor.execute(
                     "INSERT INTO guests (event_id, first_name, last_name, table_number) VALUES (%s, %s, %s, %s)",
                     (event_id, guest['first_name'], guest['last_name'], guest['table_number'])
                 )
-        else:
-            for guest in guests_list:
+            else:
                 cursor.execute(
                     "INSERT INTO guests (event_id, first_name, last_name, table_number) VALUES (?, ?, ?, ?)",
                     (event_id, guest['first_name'], guest['last_name'], guest['table_number'])
@@ -306,62 +292,27 @@ class Database:
         return guest_id
     
     def get_guests(self, event_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute("SELECT * FROM guests WHERE event_id = %s ORDER BY last_name, first_name", (event_id,))
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
-        else:
-            conn.row_factory = sqlite3.Row
-            cursor.execute("SELECT * FROM guests WHERE event_id = ? ORDER BY last_name, first_name", (event_id,))
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+            return self._fetch_all("SELECT * FROM guests WHERE event_id = %s ORDER BY last_name, first_name", (event_id,))
+        return self._fetch_all("SELECT * FROM guests WHERE event_id = ? ORDER BY last_name, first_name", (event_id,))
     
     def checkin_guest(self, guest_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute(
-                "UPDATE guests SET status = 'present', checkin_time = %s WHERE id = %s",
-                (datetime.now().isoformat(), guest_id)
-            )
+            self._execute("UPDATE guests SET status = 'present', checkin_time = %s WHERE id = %s", (datetime.now().isoformat(), guest_id))
         else:
-            cursor.execute(
-                "UPDATE guests SET status = 'present', checkin_time = ? WHERE id = ?",
-                (datetime.now().isoformat(), guest_id)
-            )
-        conn.commit()
-        cursor.close()
-        conn.close()
+            self._execute("UPDATE guests SET status = 'present', checkin_time = ? WHERE id = ?", (datetime.now().isoformat(), guest_id))
         return True
     
     def search_guests(self, event_id, query):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute(
+            return self._fetch_all(
                 "SELECT * FROM guests WHERE event_id = %s AND (first_name ILIKE %s OR last_name ILIKE %s) ORDER BY last_name, first_name LIMIT 20",
                 (event_id, f"%{query}%", f"%{query}%")
             )
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
-        else:
-            conn.row_factory = sqlite3.Row
-            cursor.execute(
-                "SELECT * FROM guests WHERE event_id = ? AND (first_name LIKE ? OR last_name LIKE ?) ORDER BY last_name, first_name LIMIT 20",
-                (event_id, f"%{query}%", f"%{query}%")
-            )
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+        return self._fetch_all(
+            "SELECT * FROM guests WHERE event_id = ? AND (first_name LIKE ? OR last_name LIKE ?) ORDER BY last_name, first_name LIMIT 20",
+            (event_id, f"%{query}%", f"%{query}%")
+        )
     
     def get_stats(self, event_id):
         conn = self.get_connection()
@@ -373,10 +324,7 @@ class Database:
             cursor.execute("SELECT COUNT(*) FROM guests WHERE event_id = %s AND status = 'present'", (event_id,))
             present = cursor.fetchone()[0]
             cursor.execute(
-                """SELECT table_number, COUNT(*) as total,
-                   SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as presents
-                FROM guests WHERE event_id = %s GROUP BY table_number
-                ORDER BY table_number""",
+                "SELECT table_number, COUNT(*) as total, SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as presents FROM guests WHERE event_id = %s GROUP BY table_number ORDER BY table_number",
                 (event_id,)
             )
             tables = cursor.fetchall()
@@ -386,10 +334,7 @@ class Database:
             cursor.execute("SELECT COUNT(*) FROM guests WHERE event_id = ? AND status = 'present'", (event_id,))
             present = cursor.fetchone()[0]
             cursor.execute(
-                """SELECT table_number, COUNT(*) as total,
-                   SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as presents
-                FROM guests WHERE event_id = ? GROUP BY table_number
-                ORDER BY table_number""",
+                "SELECT table_number, COUNT(*) as total, SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as presents FROM guests WHERE event_id = ? GROUP BY table_number ORDER BY table_number",
                 (event_id,)
             )
             tables = cursor.fetchall()
@@ -406,29 +351,17 @@ class Database:
         }
     
     def get_last_checkins(self, event_id, limit=5):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute(
+            return self._fetch_all(
                 "SELECT * FROM guests WHERE event_id = %s AND status = 'present' ORDER BY checkin_time DESC LIMIT %s",
                 (event_id, limit)
             )
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
-        else:
-            conn.row_factory = sqlite3.Row
-            cursor.execute(
-                "SELECT * FROM guests WHERE event_id = ? AND status = 'present' ORDER BY checkin_time DESC LIMIT ?",
-                (event_id, limit)
-            )
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+        return self._fetch_all(
+            "SELECT * FROM guests WHERE event_id = ? AND status = 'present' ORDER BY checkin_time DESC LIMIT ?",
+            (event_id, limit)
+        )
     
-    # ============ POSTS (Réseau Social) ============
+    # ============ POSTS ============
     
     def add_post(self, event_id, table_number, author_name, content_type, text_content="", media_url=""):
         conn = self.get_connection()
@@ -451,50 +384,27 @@ class Database:
         return post_id
     
     def get_posts(self, event_id, status=None):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
             if status:
-                cursor.execute("SELECT * FROM posts WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM posts WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
+                return self._fetch_all("SELECT * FROM posts WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM posts WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
         else:
-            conn.row_factory = sqlite3.Row
             if status:
-                cursor.execute("SELECT * FROM posts WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM posts WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+                return self._fetch_all("SELECT * FROM posts WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM posts WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
     
     def approve_post(self, post_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute("UPDATE posts SET status = 'approved' WHERE id = %s", (post_id,))
+            self._execute("UPDATE posts SET status = 'approved' WHERE id = %s", (post_id,))
         else:
-            cursor.execute("UPDATE posts SET status = 'approved' WHERE id = ?", (post_id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+            self._execute("UPDATE posts SET status = 'approved' WHERE id = ?", (post_id,))
         return True
     
     def reject_post(self, post_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute("UPDATE posts SET status = 'rejected' WHERE id = %s", (post_id,))
+            self._execute("UPDATE posts SET status = 'rejected' WHERE id = %s", (post_id,))
         else:
-            cursor.execute("UPDATE posts SET status = 'rejected' WHERE id = ?", (post_id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+            self._execute("UPDATE posts SET status = 'rejected' WHERE id = ?", (post_id,))
         return True
     
     # ============ SERVICE DE TABLE ============
@@ -520,38 +430,20 @@ class Database:
         return request_id
     
     def get_service_requests(self, event_id, status=None):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
             if status:
-                cursor.execute("SELECT * FROM service_requests WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM service_requests WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
+                return self._fetch_all("SELECT * FROM service_requests WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM service_requests WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
         else:
-            conn.row_factory = sqlite3.Row
             if status:
-                cursor.execute("SELECT * FROM service_requests WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM service_requests WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+                return self._fetch_all("SELECT * FROM service_requests WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM service_requests WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
     
     def resolve_service_request(self, request_id):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
-            cursor.execute("UPDATE service_requests SET status = 'resolved' WHERE id = %s", (request_id,))
+            self._execute("UPDATE service_requests SET status = 'resolved' WHERE id = %s", (request_id,))
         else:
-            cursor.execute("UPDATE service_requests SET status = 'resolved' WHERE id = ?", (request_id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+            self._execute("UPDATE service_requests SET status = 'resolved' WHERE id = ?", (request_id,))
         return True
     
     # ============ JUKEBOX ============
@@ -577,24 +469,11 @@ class Database:
         return request_id
     
     def get_music_requests(self, event_id, status=None):
-        conn = self.get_connection()
-        cursor = conn.cursor()
         if self.mode == 'postgresql':
             if status:
-                cursor.execute("SELECT * FROM music_requests WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM music_requests WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            result = [dict(zip(columns, row)) for row in rows]
+                return self._fetch_all("SELECT * FROM music_requests WHERE event_id = %s AND status = %s ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM music_requests WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
         else:
-            conn.row_factory = sqlite3.Row
             if status:
-                cursor.execute("SELECT * FROM music_requests WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
-            else:
-                cursor.execute("SELECT * FROM music_requests WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-        cursor.close()
-        conn.close()
-        return result
+                return self._fetch_all("SELECT * FROM music_requests WHERE event_id = ? AND status = ? ORDER BY created_at DESC", (event_id, status))
+            return self._fetch_all("SELECT * FROM music_requests WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
