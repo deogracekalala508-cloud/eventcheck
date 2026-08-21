@@ -2,22 +2,43 @@ import os
 import re
 import threading
 
-# OCR configuré pour Render (Linux) ET Windows
+# ============ CONFIGURATION OCR ============
 OCR_AVAILABLE = False
 
 try:
     from PIL import Image, ImageEnhance
     import pytesseract
     
-    # Sur Windows, configurer le chemin
-    if os.name == 'nt':
-        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-    # Sur Linux (Render), Tesseract est installé via apt-get, pas besoin de chemin
+    # Détection automatique du chemin de Tesseract
+    if os.path.exists('/usr/bin/tesseract'):
+        # Sur Render (Linux)
+        pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+    elif os.path.exists('/usr/local/bin/tesseract'):
+        # Autre emplacement Linux
+        pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
+    elif os.name == 'nt':
+        # Sur Windows
+        possible_paths = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+            r'C:\Users\deogr\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
+    
+    # Tester si Tesseract fonctionne
+    test_image = Image.new('RGB', (100, 50), color='white')
+    pytesseract.image_to_string(test_image)
     
     OCR_AVAILABLE = True
-    print("✅ OCR disponible")
+    print("✅ OCR disponible et fonctionnel")
 except Exception as e:
     print(f"⚠️ OCR non disponible: {e}")
+    OCR_AVAILABLE = False
+
+# ============ FONCTIONS ============
 
 def process_excel_file(file_path):
     """Traite un fichier Excel"""
@@ -75,18 +96,38 @@ def process_excel_file(file_path):
 def process_image_file(file_path):
     """Analyse intelligente d'une photo de liste"""
     if not OCR_AVAILABLE:
-        raise Exception("L'OCR n'est pas disponible sur ce serveur")
+        raise Exception("L'OCR n'est pas disponible. Utilisez un fichier Excel.")
     
     try:
+        # Ouvrir l'image
         image = Image.open(file_path)
-        image = image.convert('L')  # Niveaux de gris
         
+        # Convertir en niveaux de gris
+        image = image.convert('L')
+        
+        # Augmenter le contraste
         enhancer = ImageEnhance.Contrast(image)
         image = enhancer.enhance(2.0)
+        
+        # Augmenter la netteté
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(2.0)
+        
+        # Agrandir si trop petite
+        width, height = image.size
+        if width < 1000 or height < 1000:
+            scale = max(1000/width, 1000/height)
+            new_size = (int(width * scale), int(height * scale))
+            image = image.resize(new_size, Image.LANCZOS)
         
         # OCR en français
         text = pytesseract.image_to_string(image, lang='fra')
         
+        # Si le français ne donne rien, essayer en anglais
+        if not text.strip():
+            text = pytesseract.image_to_string(image, lang='eng')
+        
+        # Parser le texte
         guests = smart_parse_text(text)
         return guests
     
@@ -98,8 +139,9 @@ def smart_parse_text(text):
     guests = []
     seen_names = set()
     
+    # Nettoyer le texte
     text = text.replace('|', ' ').replace('\t', ' ').replace('  ', ' ')
-    text = text.replace('→', ' ').replace('->', ' ')
+    text = text.replace('→', ' ').replace('->', ' ').replace('➔', ' ')
     
     lines = text.strip().split('\n')
     
@@ -109,7 +151,8 @@ def smart_parse_text(text):
             continue
         
         # Ignorer les en-têtes
-        if any(word in line.lower() for word in ['nom', 'prénom', 'prenom', 'table', 'liste', 'invité', 'invite', 'page', 'total', 'nombre']):
+        lower_line = line.lower()
+        if any(word in lower_line for word in ['nom', 'prénom', 'prenom', 'table', 'liste', 'invité', 'invite', 'page', 'total', 'nombre']):
             if len(line.split()) <= 4:
                 continue
         
@@ -132,12 +175,18 @@ def smart_parse_text(text):
         if not table_name:
             table_names_list = [
                 'rose', 'tulipe', 'orchidée', 'orchidee', 'jasmin', 'lavande', 'pivoine',
-                'france', 'italie', 'espagne', 'maroc', 'tunisie', 'senegal', 'congo',
+                'marguerite', 'tournesol', 'lys', 'iris', 'violette',
+                'france', 'italie', 'espagne', 'portugal', 'maroc', 'tunisie', 'senegal',
+                'congo', 'bresil', 'japon', 'chine', 'inde', 'mexique', 'grece',
                 'paris', 'rome', 'londres', 'dubai', 'tokyo', 'barcelone', 'venise',
+                'florence', 'nice', 'marseille', 'lyon',
                 'rouge', 'bleu', 'vert', 'jaune', 'violet', 'orange', 'doré', 'dore',
+                'argent', 'blanc', 'noir', 'turquoise', 'corail',
                 'amour', 'passion', 'éternité', 'eternite', 'bonheur', 'joie', 'reve',
+                'destin', 'harmonie', 'felicite', 'félicité', 'tendresse',
                 'diamant', 'saphir', 'émeraude', 'emeraude', 'rubis', 'perle', 'opale',
                 'etoile', 'étoile', 'lune', 'soleil', 'ciel', 'mer', 'ocean', 'océan',
+                'montagne', 'foret', 'forêt', 'jardin', 'paradis',
             ]
             
             line_lower = line.lower()
@@ -174,7 +223,7 @@ def smart_parse_text(text):
             for word in words:
                 if word != last_name and not word.isdigit():
                     if word.lower() not in table_keywords:
-                        if word.lower() not in ['nom', 'prénom', 'prenom', 'liste']:
+                        if word.lower() not in ['nom', 'prénom', 'prenom', 'liste', 'monsieur', 'madame']:
                             first_name = word
                             break
             
