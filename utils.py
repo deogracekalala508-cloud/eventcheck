@@ -9,22 +9,18 @@ try:
     from PIL import Image, ImageEnhance
     import pytesseract
     
-    # Sur Render (Docker Linux), Tesseract est dans /usr/bin/
-    # Sur Windows, il faut le chemin complet
-    if os.name == 'nt':  # Windows
+    if os.name == 'nt':
         possible_paths = [
             r'C:\Program Files\Tesseract-OCR\tesseract.exe',
             r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-            r'C:\Users\deogr\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
         ]
         for path in possible_paths:
             if os.path.exists(path):
                 pytesseract.pytesseract.tesseract_cmd = path
                 break
-    # Sur Linux (Render), pas besoin de configurer le chemin
     
     OCR_AVAILABLE = True
-    print("✅ OCR configuré")
+    print("✅ OCR disponible")
 except Exception as e:
     print(f"⚠️ OCR non disponible: {e}")
     OCR_AVAILABLE = False
@@ -83,9 +79,9 @@ def process_excel_file(file_path):
         raise Exception(f"Erreur fichier: {str(e)}")
 
 def process_image_file(file_path):
-    """Analyse intelligente d'une photo de liste"""
+    """Analyse une photo de liste et extrait les invités"""
     if not OCR_AVAILABLE:
-        raise Exception("L'OCR n'est pas disponible. Utilisez un fichier Excel.")
+        raise Exception("L'OCR n'est pas disponible")
     
     try:
         image = Image.open(file_path)
@@ -94,51 +90,93 @@ def process_image_file(file_path):
         enhancer = ImageEnhance.Contrast(image)
         image = enhancer.enhance(2.0)
         
-        # Essayer le français d'abord
+        # OCR avec différentes configurations
+        all_text = ""
         try:
             text = pytesseract.image_to_string(image, lang='fra')
+            all_text += text + "\n"
         except:
-            text = pytesseract.image_to_string(image)
+            pass
         
-        guests = smart_parse_text(text)
+        try:
+            text = pytesseract.image_to_string(image)
+            all_text += text + "\n"
+        except:
+            pass
+        
+        print(f"=== TEXTE OCR EXTRAIT ===")
+        print(all_text)
+        print(f"=== FIN TEXTE ===")
+        
+        guests = smart_parse_text(all_text)
+        print(f"=== INVITÉS TROUVÉS : {len(guests)} ===")
+        for g in guests:
+            print(f"  {g['first_name']} {g['last_name']} - Table {g['table_number']}")
+        
         return guests
     
     except Exception as e:
         raise Exception(f"Erreur analyse photo: {str(e)}")
 
 def smart_parse_text(text):
-    """Parse intelligent du texte OCR"""
+    """Parse agressif - Détecte les noms et tables dans n'importe quel format"""
     guests = []
     seen_names = set()
     
+    # Nettoyer le texte
     text = text.replace('|', ' ').replace('\t', ' ').replace('  ', ' ')
+    text = text.replace('→', ' ').replace('->', ' ').replace('—', ' ')
+    text = text.replace('_', ' ').replace('.', ' ')
     
     lines = text.strip().split('\n')
     
     for line in lines:
         line = line.strip()
-        if not line or len(line) < 4:
+        if not line or len(line) < 3:
             continue
         
-        if any(word in line.lower() for word in ['nom', 'prénom', 'prenom', 'table', 'liste', 'invité', 'page', 'total']):
+        # Ignorer les lignes d'en-tête évidentes
+        lower = line.lower()
+        if any(w in lower for w in ['nom', 'prénom', 'prenom', 'liste', 'invité', 'invite', 'page', 'total', 'tableau']):
             if len(line.split()) <= 4:
                 continue
         
         words = line.split()
-        uppercase_words = [w for w in words if w.isupper() and len(w) > 1]
-        capitalized_words = [w for w in words if w[0].isupper() and not w.isupper() and len(w) > 1]
-        numbers = [w for w in words if w.isdigit()]
         
-        # Chercher les mots-clés de table
+        # Trouver les mots en MAJUSCULES (noms de famille)
+        uppercase_words = []
+        for w in words:
+            # Nettoyer le mot des ponctuations
+            clean_w = w.strip(':,;-()[]{}')
+            if clean_w.isupper() and len(clean_w) >= 2 and not clean_w.isdigit():
+                uppercase_words.append(clean_w)
+        
+        # Trouver les mots avec première lettre majuscule (prénoms)
+        capitalized_words = []
+        for w in words:
+            clean_w = w.strip(':,;-()[]{}')
+            if (clean_w[0].isupper() if clean_w else False) and not clean_w.isupper() and len(clean_w) >= 2:
+                capitalized_words.append(clean_w)
+        
+        # Trouver les numéros de table
+        numbers = []
+        for w in words:
+            clean_w = w.strip(':,;-()[]{}')
+            if clean_w.isdigit():
+                numbers.append(clean_w)
+        
+        # Chercher le mot "Table" ou "Tbl"
         table_name = None
-        table_keywords = ['table', 'tbl', 'tab', 't.']
-        
-        for i, word in enumerate(words):
-            if word.lower() in table_keywords:
+        for i, w in enumerate(words):
+            clean_w = w.lower().strip(':,;')
+            if clean_w in ['table', 'tbl', 'tab', 't']:
                 if i + 1 < len(words):
                     table_name = words[i + 1].strip(':,;-()[]{}')
                 break
         
+        # ============ DÉTECTION DES NOMS ============
+        
+        # Format 1 : "DUPONT Marie Table 8" ou "DUPONT Marie 8"
         if len(uppercase_words) >= 1 and len(capitalized_words) >= 1:
             last_name = uppercase_words[0]
             first_name = capitalized_words[0]
@@ -158,25 +196,78 @@ def smart_parse_text(text):
                     'last_name': last_name.upper(),
                     'table_number': table.upper()
                 })
+            continue
         
-        elif len(uppercase_words) >= 1 and len(words) >= 2:
+        # Format 2 : "Marie DUPONT Table 8" (prénom d'abord)
+        if len(uppercase_words) >= 1 and len(words) >= 2:
             last_name = uppercase_words[0]
+            
+            # Chercher le prénom (mot avant le nom)
             first_name = None
+            for i, w in enumerate(words):
+                clean_w = w.strip(':,;-()[]{}')
+                if clean_w == last_name and i > 0:
+                    first_name = words[i-1].strip(':,;-()[]{}')
+                    break
             
-            for word in words:
-                if word != last_name and not word.isdigit():
-                    if word.lower() not in table_keywords:
-                        if word.lower() not in ['nom', 'prénom', 'prenom', 'liste']:
-                            first_name = word
-                            break
+            # Si pas trouvé avant, chercher après
+            if not first_name:
+                for i, w in enumerate(words):
+                    clean_w = w.strip(':,;-()[]{}')
+                    if clean_w == last_name and i < len(words) - 1:
+                        first_name = words[i+1].strip(':,;-()[]{}')
+                        break
             
-            if first_name:
+            if first_name and len(first_name) >= 2 and not first_name.isdigit():
                 if table_name:
                     table = table_name
                 elif numbers:
                     table = numbers[0]
                 else:
                     table = "À assigner"
+                
+                key = f"{last_name}_{first_name}"
+                if key not in seen_names:
+                    seen_names.add(key)
+                    guests.append({
+                        'first_name': first_name.upper(),
+                        'last_name': last_name.upper(),
+                        'table_number': table.upper()
+                    })
+    
+    # Si AUCUN invité trouvé avec les patterns, essayer ligne par ligne simple
+    if len(guests) == 0:
+        for line in lines:
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            
+            words = line.split()
+            if len(words) < 2:
+                continue
+            
+            # Chercher un numéro de table
+            table = "À assigner"
+            name_words = []
+            
+            for w in words:
+                clean_w = w.strip(':,;-()[]{}')
+                if clean_w.isdigit():
+                    table = clean_w
+                elif len(clean_w) >= 2:
+                    name_words.append(clean_w)
+            
+            if len(name_words) >= 2:
+                # Premier mot = prénom, deuxième = nom (ou inversement)
+                if name_words[0].isupper() and not name_words[1].isupper():
+                    last_name = name_words[0]
+                    first_name = name_words[1]
+                elif name_words[1].isupper() and not name_words[0].isupper():
+                    last_name = name_words[1]
+                    first_name = name_words[0]
+                else:
+                    first_name = name_words[0]
+                    last_name = name_words[1]
                 
                 key = f"{last_name}_{first_name}"
                 if key not in seen_names:
