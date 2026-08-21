@@ -1,23 +1,21 @@
 FROM python:3.11-slim
 
-# Installer Tesseract OCR
+# Installer Tesseract OCR (sans libgl1-mesa-glx)
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-fra \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Vérifier Tesseract
-RUN tesseract --version
+# Vérifier que Tesseract est installé
+RUN which tesseract && tesseract --version
 
 WORKDIR /app
 
-# Copier les dépendances
+# Copier et installer les dépendances Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier le code
+# Copier tout le code
 COPY . .
 
 # Lancer l'application
