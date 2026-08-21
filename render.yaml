@@ -9,11 +9,7 @@ services:
         value: ma_cle_secrete_2024
       - key: ADMIN_PASSWORD
         value: eventcheck2024
-      - key: DATABASE_URL
-        fromDatabase:
-          name: eventcheck-db
-          property: connectionString
-
-databases:
-  - name: eventcheck-db
-    plan: free
+    disk:
+      name: eventcheck-data
+      mountPath: /app/data
+      sizeGB: 1
